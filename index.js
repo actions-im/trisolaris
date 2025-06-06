@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trisolaris Simulator with Gemini AI Analysis</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #simulationContainer {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+            position: relative;
+        }
+        canvas {
+            display: block;
+        }
+        .infoPanel {
+            position: absolute;
+            background-color: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            z-index: 10;
+            max-width: 250px;
+        }
+        #controlsInfo {
+            top: 10px;
+            left: 10px;
+        }
+        #aiPanel {
+            top: 10px;
+            right: 10px;
+        }
+        #aiPanel h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #f39c12;
+        }
+        #aiResponse {
+            margin-top: 10px;
+            padding: 8px;
+            background-color: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            min-height: 50px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85em;
+        }
+        #messageBox {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255, 100, 100, 0.9);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            display: none; /* Hidden by default */
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        #resetButtonContainer {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+        }
+        .simButton {
+            padding: 10px 20px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: background-color 0.3s;
+        }
+        #resetButton {
+            background-color: #c0392b;
+        }
+        #resetButton:hover {
+            background-color: #e74c3c;
+        }
+        #aiButton {
+            background: linear-gradient(45deg, #f39c12, #f1c40f);
+        }
+        #aiButton:hover {
+            opacity: 0.9;
+        }
+        #aiButton:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .loader {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #f39c12;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="simulationContainer">
+        <div id="controlsInfo" class="infoPanel">
+            <p><strong>Controls:</strong></p>
+            <p>Mouse Drag: Orbit</p>
+            <p>Mouse Wheel: Zoom</p>
+            <p>Right-Click Drag: Pan</p>
+        </div>
+
+        <div id="aiPanel" class="infoPanel">
+            <h3>Astrogation AI Analysis</h3>
+            <button id="aiButton" class="simButton">✨ Analyze System</button>
+            <div id="aiResponse">Awaiting analysis...</div>
+        </div>
+
+        <div id="resetButtonContainer">
+            <button id="resetButton" class="simButton">New Random System</button>
+        </div>
+    </div>
+    <div id="messageBox">This is a message!</div>
+
+    <script type="module">
+        // --- Global Variables & Constants ---
+        let scene, camera, renderer, controls;
+        let bodies = [];
+        const G = 0.6; 
+        const dt = 0.007; 
+        const trailLength = 400; 
+        const baseBodyRadius = 0.12; 
+
+        // DOM Elements
+        const container = document.getElementById('simulationContainer');
+        const messageBox = document.getElementById('messageBox');
+        const resetButton = document.getElementById('resetButton');
+        const aiButton = document.getElementById('aiButton');
+        const aiResponseDiv = document.getElementById('aiResponse');
+
+        // --- Initialization ---
+        function init() {
+            try {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 3000);
+                camera.position.set(0, 10, 18); 
+
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                container.appendChild(renderer.domElement);
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+                scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(5, 10, 7.5);
+                scene.add(directionalLight);
+
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.screenSpacePanning = false;
+                controls.minDistance = 1; 
+                controls.maxDistance = 250; 
+
+                createStarfield();
+                setupBodies();
+
+                // Event Listeners
+                window.addEventListener('resize', onWindowResize, false);
+                resetButton.addEventListener('click', resetSimulation);
+                aiButton.addEventListener('click', analyzeSystemWithAI);
+
+                animate();
+                showMessage("Randomized Trisolaran System Initialized.", "info", 5000);
+
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                showMessage(`Error initializing system: ${error.message}`, "error");
+            }
+        }
+
+        function setupBodies() {
+            bodies.forEach(body => {
+                scene.remove(body.mesh);
+                if (body.trailLine) scene.remove(body.trailLine);
+            });
+            bodies = [];
+            const newBodies = [];
+            const starColors = [0xffdd44, 0xff7733, 0xdd3311];
+            for (let i = 0; i < 3; i++) {
+                const mass = THREE.MathUtils.randFloat(4.0, 7.0);
+                const position = new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(10),
+                    THREE.MathUtils.randFloatSpread(10),
+                    THREE.MathUtils.randFloatSpread(10)
+                );
+                const velocity = new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(0.5),
+                    THREE.MathUtils.randFloatSpread(0.5),
+                    THREE.MathUtils.randFloatSpread(0.5)
+                );
+                const body = createBody(mass, starColors[i], position, velocity, true);
+                newBodies.push(body);
+            }
+
+            const totalMass = newBodies.reduce((sum, body) => sum + body.mass, 0);
+            const totalMomentum = new THREE.Vector3();
+            newBodies.forEach(body => {
+                totalMomentum.add(body.velocity.clone().multiplyScalar(body.mass));
+            });
+            const centerOfMassVelocity = totalMomentum.divideScalar(totalMass);
+            newBodies.forEach(body => {
+                body.velocity.sub(centerOfMassVelocity);
+            });
+
+            let mostMassiveStar = newBodies.reduce((a, b) => a.mass > b.mass ? a : b);
+            const planetMass = 0.02;
+            const planetColor = 0x6699ff;
+
+            const orbitRadius = THREE.MathUtils.randFloat(2.5, 4.0);
+            const planetRelativePos = new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(2), 
+                THREE.MathUtils.randFloatSpread(2), 
+                THREE.MathUtils.randFloatSpread(2)
+            ).normalize().multiplyScalar(orbitRadius);
+            const planetPosition = mostMassiveStar.position.clone().add(planetRelativePos);
+            
+            const up = new THREE.Vector3(0, 1, 0);
+            const orbitalDirection = planetRelativePos.clone().cross(up).normalize();
+            if (orbitalDirection.lengthSq() < 0.1) {
+                orbitalDirection.copy(new THREE.Vector3(1,0,0));
+            }
+
+            const orbitalSpeed = Math.sqrt((G * mostMassiveStar.mass) / orbitRadius);
+            const planetRelativeVel = orbitalDirection.multiplyScalar(orbitalSpeed);
+            const planetVelocity = mostMassiveStar.velocity.clone().add(planetRelativeVel);
+
+            const planet = createBody(planetMass, planetColor, planetPosition, planetVelocity, false);
+            newBodies.push(planet);
+            
+            newBodies.forEach(body => {
+                 bodies.push(body);
+                 scene.add(body.mesh);
+            });
+            aiResponseDiv.innerHTML = "Awaiting analysis...";
+        }
+
+        async function analyzeSystemWithAI() {
+            aiButton.disabled = true;
+            aiResponseDiv.innerHTML = 'Analyzing...<div class="loader"></div>';
+
+            const stars = bodies.filter(b => b.isStar);
+            if (stars.length < 3) {
+                aiResponseDiv.innerText = "Error: Not enough stars in the system to analyze.";
+                aiButton.disabled = false;
+                return;
+            }
+
+            const starMasses = stars.map(s => s.mass.toFixed(2)).join(', ');
+
+            const prompt = `
+You are an astrogation AI aboard a deep space exploration vessel. Your task is to analyze a newly discovered, unstable three-star system that contains a single planet.
+
+Based on the following data for the three stars, generate a report.
+
+Star Masses (in stellar units): ${starMasses}
+
+Your report must contain:
+1.  **System Designation:** A cool, evocative, and scientific-sounding name for the star system.
+2.  **Narrative Analysis:** A brief, dramatic log entry (2-4 sentences) describing the system's nature. Emphasize its chaotic and dangerous characteristics, suitable for a sci-fi setting.
+
+Format your response clearly with "System Designation:" and "Narrative Analysis:" labels.
+`;
+
+            try {
+                const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Will be replaced by the Canvas environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    aiResponseDiv.innerText = text;
+                } else {
+                    throw new Error("Invalid response structure from API.");
+                }
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                aiResponseDiv.innerText = `Error: Could not retrieve analysis. ${error.message}`;
+            } finally {
+                aiButton.disabled = false;
+            }
+        }
+
+        function createBody(mass, color, initialPosition, initialVelocity, isStar = false) {
+            const actualRadius = baseBodyRadius * Math.cbrt(mass); 
+            const geometry = new THREE.SphereGeometry(actualRadius, 32, 32);
+            
+            let material;
+            if (isStar) {
+                material = new THREE.MeshPhongMaterial({ 
+                    color: color, shininess: 90, emissive: color, emissiveIntensity: 0.3 
+                });
+            } else {
+                material = new THREE.MeshPhongMaterial({ color: color, shininess: 60 });
+            }
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.copy(initialPosition);
+
+            if (isStar) {
+                const pointLight = new THREE.PointLight(color, 0.7, 50);
+                mesh.add(pointLight);
+            }
+
+            const trailMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 1.5 });
+            const trailGeometry = new THREE.BufferGeometry();
+            const trailPositions = new Float32Array(trailLength * 3);
+            trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+            
+            const trailLine = new THREE.Line(trailGeometry, trailMaterial);
+            trailLine.frustumCulled = false; 
+
+            return {
+                mass, radius: actualRadius, position: initialPosition.clone(), velocity: initialVelocity.clone(), acceleration: new THREE.Vector3(), mesh, trailLine, trailDrawCount: 0, isStar
+            };
+        }
+
+        function createStarfield() {
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.03, transparent: true, opacity: 0.6 });
+            const starVertices = [];
+            for (let i = 0; i < 20000; i++) {
+                const x = THREE.MathUtils.randFloatSpread(250);
+                const y = THREE.MathUtils.randFloatSpread(250);
+                const z = THREE.MathUtils.randFloatSpread(250);
+                if (x*x + y*y + z*z > 40*40) { starVertices.push(x, y, z); }
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            scene.add(new THREE.Points(starGeometry, starMaterial));
+        }
+
+        function updatePhysics() {
+            bodies.forEach(body => body.acceleration.set(0, 0, 0));
+
+            for (let i = 0; i < bodies.length; i++) {
+                for (let j = i + 1; j < bodies.length; j++) {
+                    const bodyA = bodies[i];
+                    const bodyB = bodies[j];
+                    const diff = new THREE.Vector3().subVectors(bodyB.position, bodyA.position);
+                    const distanceSq = diff.lengthSq();
+                    const sumOfRadii = bodyA.radius + bodyB.radius;
+
+                    if (distanceSq < sumOfRadii * sumOfRadii * 0.9) {
+                        const collisionNormal = diff.clone().normalize();
+                        const vA_normal_comp = bodyA.velocity.dot(collisionNormal);
+                        const vB_normal_comp = bodyB.velocity.dot(collisionNormal);
+                        if (vB_normal_comp - vA_normal_comp < 0) {
+                            bodyA.velocity.sub(collisionNormal.clone().multiplyScalar(1.5 * vA_normal_comp));
+                            bodyB.velocity.sub(collisionNormal.clone().multiplyScalar(1.5 * vB_normal_comp));
+                        }
+                        const overlap = sumOfRadii - Math.sqrt(distanceSq);
+                        if (overlap > -bodyA.radius*0.1) {
+                           const repulsiveMagnitude = G * bodyA.mass * bodyB.mass / (distanceSq * 0.5);
+                           const repulsiveForceVec = diff.clone().normalize().multiplyScalar(-repulsiveMagnitude);
+                           bodyA.acceleration.add(repulsiveForceVec.clone().divideScalar(bodyA.mass));
+                           bodyB.acceleration.sub(repulsiveForceVec.clone().divideScalar(bodyB.mass));
+                        }
+                    }
+
+                    const forceMagnitude = G * bodyA.mass * bodyB.mass / Math.max(distanceSq, sumOfRadii * sumOfRadii * 0.01);
+                    const forceVector = diff.normalize().multiplyScalar(forceMagnitude);
+                    bodyA.acceleration.add(forceVector.clone().divideScalar(bodyA.mass));
+                    bodyB.acceleration.sub(forceVector.clone().divideScalar(bodyB.mass));
+                }
+            }
+            bodies.forEach(body => {
+                body.velocity.add(body.acceleration.clone().multiplyScalar(dt));
+                body.position.add(body.velocity.clone().multiplyScalar(dt));
+                body.mesh.position.copy(body.position);
+                updateTrail(body);
+            });
+        }
+
+        function updateTrail(body) {
+            const positions = body.trailLine.geometry.attributes.position.array;
+            if (body.trailDrawCount > 0) {
+                 for (let i = Math.min(body.trailDrawCount, trailLength - 1) * 3 - 3; i >= 0; i -=3) {
+                    positions[i+3] = positions[i];
+                    positions[i+4] = positions[i+1];
+                    positions[i+5] = positions[i+2];
+                }
+            }
+            positions[0] = body.position.x;
+            positions[1] = body.position.y;
+            positions[2] = body.position.z;
+            if (body.trailDrawCount < trailLength) body.trailDrawCount++;
+            body.trailLine.geometry.setDrawRange(0, body.trailDrawCount);
+            body.trailLine.geometry.attributes.position.needsUpdate = true;
+            if (!body.trailLine.parent) scene.add(body.trailLine);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            try {
+                updatePhysics();
+                controls.update(); 
+                renderer.render(scene, camera);
+            } catch (error) {
+                console.error("Error in animation loop:", error);
+                showMessage(`Runtime error: ${error.message}`, "error", 5000);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function resetSimulation() {
+            showMessage("Generating a new random system...", "warning", 2000);
+            setupBodies();
+            controls.target.set(0,0,0);
+            controls.update();
+        }
+        
+        function showMessage(text, type = "info", duration = 3000) {
+            messageBox.textContent = text;
+            messageBox.style.display = 'block';
+            if (type === "error") messageBox.style.backgroundColor = 'rgba(220, 20, 60, 0.85)';
+            else if (type === "warning") messageBox.style.backgroundColor = 'rgba(243, 156, 18, 0.85)';
+            else messageBox.style.backgroundColor = 'rgba(39, 174, 96, 0.85)';
+
+            if (duration > 0) {
+                setTimeout(() => { messageBox.style.display = 'none'; }, duration);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
